@@ -58,9 +58,6 @@ class SimpleServerRdmaRpcConnection extends ServerRpcConnection {
 
   private RdmaNative rdma;
   public RdmaNative.RdmaConnection rdmaconn;//the core of the rdmaconn class TODO init  these two
-  final SocketChannel channel;
-  //final Object qp;
-  //final RdmaChannel rdmaConn;
   private ByteBuff data;//TODO init these buffers
   private ByteBuffer dataLengthBuffer;
   private ByteBuffer preambleBuffer;
@@ -83,14 +80,13 @@ class SimpleServerRdmaRpcConnection extends ServerRpcConnection {
       long lastContact) {
     super(rpcServer);
     this.lastContact = lastContact;
-    this.channel = null;
     this.data = null;
     this.dataLengthBuffer = ByteBuffer.allocate(4);
     this.hostAddress = null;
     this.remotePort = port;
     this.responder = rpcServer.rdmaresponder;
     SimpleRpcServer.LOG.warn("RDMA init rdmaconn L98 simpleserverRdmaconn.java");
-    this.rdmaconn = null;//rdma.rdmaBlockedAccept(port);// ??? null pointer?
+    this.rdmaconn = rdma.rdmaBlockedAccept(port);// ??? null pointer?
   }
 
   public void setLastContact(long lastContact) {
