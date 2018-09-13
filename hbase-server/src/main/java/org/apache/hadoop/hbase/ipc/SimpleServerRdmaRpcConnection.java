@@ -17,6 +17,9 @@
  */
 package org.apache.hadoop.hbase.ipc;
 
+import static io.netty.buffer.Unpooled.*;
+import java.io.ByteArrayInputStream; 
+import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
@@ -49,17 +52,31 @@ import org.apache.hadoop.hbase.util.Pair;
 @edu.umd.cs.findbugs.annotations.SuppressWarnings(value = "VO_VOLATILE_INCREMENT",
     justification = "False positive according to http://sourceforge.net/p/findbugs/bugs/1032/")
 @InterfaceAudience.Private
-class SimpleServerRpcConnection extends ServerRpcConnection {
+class SimpleServerRdmaRpcConnection extends ServerRpcConnection {
 
+  static {
+    System.loadLibrary("rdma");
+  }
+  // public native boolean rdmaDoRespond(Object qp, ByteBuffer sbuf);
+  // public native Object rdmaBlockedAccept(int port);
+  // public native boolean ifReadable(Object qp);
+  // public native ByteBuffer  getrbuf(Object qp);
+  // public native boolean  rdmaisOpen(Object qp);
+
+  private RdmaNative rdma;
+  public RdmaNative.RdmaConnection rdmaconn;//the core of the rdmaconn class TODO init  these two
   final SocketChannel channel;
+  //final Object qp;
   //final RdmaChannel rdmaConn;
-  private ByteBuff data;
+  private ByteBuff data;//TODO init these buffers
   private ByteBuffer dataLengthBuffer;
   private ByteBuffer preambleBuffer;
+  private ByteBuffer rbuf;
+  private DataInputStream rdma_in;
   private final LongAdder rpcCount = new LongAdder(); // number of outstanding rpcs
   private long lastContact;
-  private final Socket socket;
-  final SimpleRpcServerResponder responder;
+  //TODO change to RDMA rgy
+  final SimpleRpcServerRdmaResponder responder;
   //final RdmaHandler rdmahandler;
 
   // If initial preamble with version and magic has been read or not.
@@ -69,30 +86,18 @@ class SimpleServerRpcConnection extends ServerRpcConnection {
   final Lock responseWriteLock = new ReentrantLock();
   long lastSentTime = -1L;
 
-  public SimpleServerRpcConnection(SimpleRpcServer rpcServer, SocketChannel channel,
+  public SimpleServerRdmaRpcConnection(SimpleRpcServer rpcServer,int port,
       long lastContact) {
     super(rpcServer);
-    this.channel = channel;
     this.lastContact = lastContact;
+    this.channel=null;
     this.data = null;
     this.dataLengthBuffer = ByteBuffer.allocate(4);
-    this.socket = channel.socket();
-    this.addr = socket.getInetAddress();
-    if (addr == null) {
-      this.hostAddress = "*Unknown*";
-    } else {
-      this.hostAddress = addr.getHostAddress();
-    }
-    this.remotePort = socket.getPort();
-    if (rpcServer.socketSendBufferSize != 0) {
-      try {
-        socket.setSendBufferSize(rpcServer.socketSendBufferSize);
-      } catch (IOException e) {
-        SimpleRpcServer.LOG.warn(
-          "Connection: unable to set socket send buffer size to " + rpcServer.socketSendBufferSize);
-      }
-    }
-    this.responder = rpcServer.responder;
+    this.hostAddress = null;
+    this.remotePort = port;
+    this.responder = rpcServer.rdmaresponder;
+    SimpleRpcServer.LOG.warn("RDMA init rdmaconn L98");
+    this.rdmaconn=rdma.rdmaBlockedAccept(port);//??? only return a empty here, ifReadable will ensure it is finished
   }
 
 
@@ -108,7 +113,15 @@ class SimpleServerRpcConnection extends ServerRpcConnection {
   boolean isIdle() {
     return rpcCount.sum() == 0;
   }
-
+// if it is readable , then just read into the rbuf
+  boolean isReadable(){
+    if (rdmaconn.isRemoteReadable()) {
+      this.rbuf=rdmaconn.readRemote();
+      return true;
+    } else {
+      return false;
+    }
+  }
   /* Decrement the outstanding RPC count */
   protected void decRpcCount() {
     rpcCount.decrement();
@@ -119,11 +132,22 @@ class SimpleServerRpcConnection extends ServerRpcConnection {
     rpcCount.increment();
   }
 
+  //taken from stack overflow
+  public static int transferAsMuchAsPossible(ByteBuffer bbuf_dest, ByteBuffer bbuf_src) {
+    int nTransfer = Math.min(bbuf_dest.remaining(), bbuf_src.remaining());
+    if (nTransfer > 0) {
+      bbuf_dest.put(bbuf_src.array(), bbuf_src.arrayOffset() + bbuf_src.position(), nTransfer);
+      bbuf_src.position(bbuf_src.position() + nTransfer);
+    }
+    return nTransfer;
+  }
+
+
   private int readPreamble() throws IOException {
     if (preambleBuffer == null) {
       preambleBuffer = ByteBuffer.allocate(6);
     }
-    int count = this.rpcServer.channelRead(channel, preambleBuffer);
+    int count = transferAsMuchAsPossible(rbuf, preambleBuffer);//TODO change to rdma
     if (count < 0 || preambleBuffer.remaining() > 0) {
       return count;
     }
@@ -138,7 +162,7 @@ class SimpleServerRpcConnection extends ServerRpcConnection {
 
   private int read4Bytes() throws IOException {
     if (this.dataLengthBuffer.remaining() > 0) {
-      return this.rpcServer.channelRead(channel, this.dataLengthBuffer);
+      return transferAsMuchAsPossible(rbuf, this.dataLengthBuffer);//TODO change to rdma
     } else {
       return 0;
     }
@@ -152,7 +176,9 @@ class SimpleServerRpcConnection extends ServerRpcConnection {
    * @throws InterruptedException
    */
   public int readAndProcess() throws IOException, InterruptedException {
+    SimpleRpcServer.LOG.warn("RDMA readAndProcess  178");
     // If we have not read the connection setup preamble, look to see if that is on the wire.
+    //rdma_in=new DataInputStream(new ByteArrayInputStream(rbuf.array(),rbuf.arrayOffset(),rbuf.limit()));
     if (!connectionPreambleRead) {
       int count = readPreamble();
       if (!connectionPreambleRead) {
@@ -199,7 +225,7 @@ class SimpleServerRpcConnection extends ServerRpcConnection {
           InputStream is = new InputStream() {
             @Override
             public int read() throws IOException {
-              SimpleServerRpcConnection.this.rpcServer.channelRead(channel, buf);
+              //transferAsMuchAsPossible(rbuf, buf);
               buf.flip();
               int x = buf.get();
               buf.flip();
@@ -247,11 +273,10 @@ class SimpleServerRpcConnection extends ServerRpcConnection {
       incRpcCount();
     }
 
-    count = channelDataRead(channel, data);
-
-    if (count >= 0 && data.remaining() == 0) { // count==0 if dataLength == 0
+    //count = channelDataRead(rbuf, data);//TODO dropped count
+      data.put(rbuf.array(),0,rbuf.remaining());//??? RGY
+   
       process();
-    }
 
     return count;
   }
@@ -278,13 +303,7 @@ class SimpleServerRpcConnection extends ServerRpcConnection {
     }
   }
 
-  protected int channelDataRead(ReadableByteChannel channel, ByteBuff buf) throws IOException {
-    int count = buf.read(channel);
-    if (count > 0) {
-      this.rpcServer.metrics.receivedBytes(count);
-    }
-    return count;
-  }
+
 
   /**
    * Process the data buffer and clean the connection state for the next call.
@@ -292,17 +311,7 @@ class SimpleServerRpcConnection extends ServerRpcConnection {
   private void process() throws IOException, InterruptedException {
     data.rewind();
     try {
-      if (skipInitialSaslHandshake) {
-        skipInitialSaslHandshake = false;
-        return;
-      }
-
-      if (useSasl) {
-        saslReadAndProcess(data);
-      } else {
         processOneRpc(data);
-      }
-
     } finally {
       dataLengthBuffer.clear(); // Clean for the next call
       data = null; // For the GC
@@ -312,35 +321,16 @@ class SimpleServerRpcConnection extends ServerRpcConnection {
 
   @Override
   public synchronized void close() {
-    disposeSasl();
+   
     data = null;
     callCleanup = null;
-    if (!channel.isOpen()) return;
-    try {
-      socket.shutdownOutput();
-    } catch (Exception ignored) {
-      if (SimpleRpcServer.LOG.isTraceEnabled()) {
-        SimpleRpcServer.LOG.trace("Ignored exception", ignored);
-      }
-    }
-    if (channel.isOpen()) {
-      try {
-        channel.close();
-      } catch (Exception ignored) {
-      }
-    }
-    try {
-      socket.close();
-    } catch (Exception ignored) {
-      if (SimpleRpcServer.LOG.isTraceEnabled()) {
-        SimpleRpcServer.LOG.trace("Ignored exception", ignored);
-      }
-    }
+   //TODO rdma close
+    
   }
 
   @Override
   public boolean isConnectionOpen() {
-    return channel.isOpen();
+    return !(rdmaconn.isClosed());
   }
 
   @Override
@@ -354,6 +344,37 @@ class SimpleServerRpcConnection extends ServerRpcConnection {
 
   @Override
   protected void doRespond(RpcResponse resp) throws IOException {
-    responder.doRespond(this, resp);
+    processResponse(this, resp);
+  }
+
+  private boolean processResponse(SimpleServerRdmaRpcConnection conn, RpcResponse resp) throws IOException {
+    boolean error = true;
+    BufferChain buf = resp.getResponse();
+    try {
+      // Send as much data as we can in the non-blocking fashion
+
+      SimpleRpcServer.LOG.info("recolic: rdmaHandler::doRespond");
+      ByteBuffer sbuf = buf.concat();
+      //rdma.rdmaRespond(conn.qp, sbuf);
+      if(conn.rdmaconn.writeLocal(sbuf)==1) //TODO
+      error = true;
+      SimpleRpcServer.LOG.warn("RDMA processResponse");
+      error = false;
+    } finally {
+      if (error) {
+        SimpleRpcServer.LOG.debug(conn + ": output error -- closing");
+        resp.done();
+        SimpleRpcServer.closeRdmaConnection(conn);
+      }
+    }
+
+    if (!buf.hasRemaining()) {
+      resp.done();
+      return true;
+    } else {
+      // set the serve time when the response has to be sent later
+      conn.lastSentTime = System.currentTimeMillis();
+      return false; // Socket can't take more, we will have to come back.
+    }
   }
 }

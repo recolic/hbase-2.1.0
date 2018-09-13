@@ -37,9 +37,12 @@ import org.apache.hadoop.hbase.shaded.protobuf.generated.RPCProtos.RequestHeader
 class SimpleServerCall extends ServerCall<SimpleServerRpcConnection> {
 
   final SimpleRpcServerResponder responder;
+  final SimpleRpcServerRdmaResponder rdmaresponder;
+  //final RdmaHandler rdmahandler;
 
   @edu.umd.cs.findbugs.annotations.SuppressWarnings(value = "NP_NULL_ON_SOME_PATH",
       justification = "Can't figure why this complaint is happening... see below")
+
   SimpleServerCall(int id, final BlockingService service, final MethodDescriptor md,
       RequestHeader header, Message param, CellScanner cellScanner,
       SimpleServerRpcConnection connection, long size,
@@ -48,6 +51,18 @@ class SimpleServerCall extends ServerCall<SimpleServerRpcConnection> {
     super(id, service, md, header, param, cellScanner, connection, size, remoteAddress,
         receiveTime, timeout, reservoir, cellBlockBuilder, reqCleanup);
     this.responder = responder;
+    this.rdmaresponder = null;
+  }
+
+  SimpleServerCall(int id, final BlockingService service, final MethodDescriptor md, 
+      RequestHeader header, Message param, CellScanner cellScanner, 
+      SimpleServerRdmaRpcConnection rdmaconnection, long size,
+      final InetAddress remoteAddress, long receiveTime, int timeout, ByteBufferPool reservoir,
+      CellBlockBuilder cellBlockBuilder, CallCleanup reqCleanup, SimpleRpcServerRdmaResponder rdmaresponder) {
+    super(id, service, md, header, param, cellScanner, rdmaconnection, size, remoteAddress, receiveTime, timeout,
+        reservoir, cellBlockBuilder, reqCleanup);
+    this.rdmaresponder = rdmaresponder;
+    this.responder = null;
   }
 
   /**

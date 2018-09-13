@@ -24,6 +24,7 @@ import static org.apache.hadoop.hbase.ipc.IPCUtil.isFatalConnectionException;
 import static org.apache.hadoop.hbase.ipc.IPCUtil.setCancelled;
 import static org.apache.hadoop.hbase.ipc.IPCUtil.write;
 
+import java.io.ByteArrayInputStream; 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
@@ -86,6 +87,7 @@ import org.apache.hadoop.hbase.shaded.protobuf.generated.RPCProtos.ResponseHeade
 @InterfaceAudience.Private
 class BlockingRpcConnection extends RpcConnection implements Runnable {
 
+  public boolean isRdma=true;
   private static final Logger LOG = LoggerFactory.getLogger(BlockingRpcConnection.class);
 
   private final BlockingRpcClient rpcClient;
@@ -97,9 +99,21 @@ class BlockingRpcConnection extends RpcConnection implements Runnable {
 
   // connected socket. protected for writing UT.
   protected Socket socket = null;
-  private DataInputStream in;
+  private DataInputStream in;//TODO rgy change to rdma
   private DataOutputStream out;
-
+  private DataInputStream rdma_in;
+  private DataOutputStream rdma_out;//TODO rgy init
+  private ByteArrayOutputStream rdma_out_stream;
+  private RdmaNative rdma;
+  private RdmaNative.RdmaConnection rdmaconn;
+  //public Object qp;
+  static {
+    System.loadLibrary("rdma");
+  }
+  //public native  Boolean rdmaWrite(Object qp, ByteBuffer sbuf);
+  //public native  Object  rdmaConnect(String serverIp, int serverPort);
+  //public native  ByteBuffer rdmaRead(Object qp);
+  public int rdma_port;
   private HBaseSaslRpcClient saslRpcClient;
 
   // currently active calls
@@ -346,7 +360,11 @@ class BlockingRpcConnection extends RpcConnection implements Runnable {
       LOG.trace(threadName + ": starting, connections " + this.rpcClient.connections.size());
     }
     while (waitForWork()) {
+
+
+      
       readResponse();
+      
     }
     if (LOG.isTraceEnabled()) {
       LOG.trace(threadName + ": stopped, connections " + this.rpcClient.connections.size());
@@ -490,10 +508,65 @@ class BlockingRpcConnection extends RpcConnection implements Runnable {
         this.in = new DataInputStream(new BufferedInputStream(inStream));
         this.out = new DataOutputStream(new BufferedOutputStream(outStream));
         // Now write out the connection header
-        writeConnectionHeader();
+          writeConnectionHeader();
         // process the response from server for connection header if necessary
         processResponseForConnectionHeader();
 
+        break;
+      }
+    } catch (Throwable t) {
+      closeSocket();
+      IOException e = ExceptionUtil.asInterrupt(t);
+      if (e == null) {
+        this.rpcClient.failedServers.addToFailedServers(remoteId.address, t);
+        if (t instanceof LinkageError) {
+          // probably the hbase hadoop version does not match the running hadoop version
+          e = new DoNotRetryIOException(t);
+        } else if (t instanceof IOException) {
+          e = (IOException) t;
+        } else {
+          e = new IOException("Could not set up IO Streams to " + remoteId.address, t);
+        }
+      }
+      throw e;
+    }
+
+    // start the receiver thread after the socket connection has been set up
+    thread = new Thread(this, threadName);
+    thread.setDaemon(true);
+    thread.start();
+  }
+  private void setupRdmaIOstreams() throws IOException {
+    LOG.warn("RDMA setupRdmaIOstreams");
+    //if (socket != null) {
+      // The connection is already available. Perfect.
+    //  return;
+    //}
+    this.rdma_out_stream = new ByteArrayOutputStream();
+    this.rdma_out = new DataOutputStream(this.rdma_out_stream);
+
+    //TODO init rdma conn here
+
+    if (this.rpcClient.failedServers.isFailedServer(remoteId.getAddress())) {
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Not trying to connect to " + remoteId.address
+            + " this server is in the failed servers list");
+      }
+      throw new FailedServerException(
+          "This server is in the failed servers list: " + remoteId.address);
+    }
+
+    try {
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Connecting to " + remoteId.address);
+      }
+
+      while (true) {
+        // Write out the preamble -- MAGIC, version, and auth to use.
+        rdma_out.write(connectionHeaderPreamble);
+        // Now write out the connection header
+        this.rdma_out.write(connectionHeaderWithLength); 
+        //processResponseForConnectionHeader(); no support for encryption RGY
         break;
       }
     } catch (Throwable t) {
@@ -552,22 +625,22 @@ class BlockingRpcConnection extends RpcConnection implements Runnable {
     // if no response excepted, return
     if (!waitingConnectionHeaderResponse) return;
     try {
-      // read the ConnectionHeaderResponse from server
-      int len = this.in.readInt();
-      byte[] buff = new byte[len];
-      int readSize = this.in.read(buff);
-      if (LOG.isDebugEnabled()) {
-        LOG.debug("Length of response for connection header:" + readSize);
-      }
+        int len = this.in.readInt();
+        byte[] buff = new byte[len];
+        int readSize = this.in.read(buff);
+        if (LOG.isDebugEnabled()) {
+          LOG.debug("Length of response for connection header:" + readSize);
+        }
+  
+        RPCProtos.ConnectionHeaderResponse connectionHeaderResponse =
+            RPCProtos.ConnectionHeaderResponse.parseFrom(buff);
+  
+        // Get the CryptoCipherMeta, update the HBaseSaslRpcClient for Crypto Cipher
+        if (connectionHeaderResponse.hasCryptoCipherMeta()) {
+          negotiateCryptoAes(connectionHeaderResponse.getCryptoCipherMeta());
+        }
+        waitingConnectionHeaderResponse = false;
 
-      RPCProtos.ConnectionHeaderResponse connectionHeaderResponse =
-          RPCProtos.ConnectionHeaderResponse.parseFrom(buff);
-
-      // Get the CryptoCipherMeta, update the HBaseSaslRpcClient for Crypto Cipher
-      if (connectionHeaderResponse.hasCryptoCipherMeta()) {
-        negotiateCryptoAes(connectionHeaderResponse.getCryptoCipherMeta());
-      }
-      waitingConnectionHeaderResponse = false;
     } catch (SocketTimeoutException ste) {
       LOG.error(HBaseMarkers.FATAL, "Can't get the connection header response for rpc timeout, "
           + "please check if server has the correct configuration to support the additional "
@@ -589,7 +662,12 @@ class BlockingRpcConnection extends RpcConnection implements Runnable {
   private void tracedWriteRequest(Call call) throws IOException {
     try (TraceScope ignored = TraceUtil.createTrace("RpcClientImpl.tracedWriteRequest",
           call.span)) {
-      writeRequest(call);
+       String callMd = call.md.getName();
+      if ((!useSasl)&&(this.isRdma) && ((callMd.equals("Get")) || (callMd.equals("Multi")) || (callMd.equals("Scan"))))
+        {LOG.warn("RDMA get a call");
+        writeRdmaRequest(call);}
+      else
+        writeRequest(call);
     }
   }
 
@@ -633,7 +711,47 @@ class BlockingRpcConnection extends RpcConnection implements Runnable {
     }
     notifyAll();
   }
+  private void writeRdmaRequest(Call call) throws IOException {
+    ByteBuffer cellBlock = this.rpcClient.cellBlockBuilder.buildCellBlock(this.codec,
+      this.compressor, call.cells);
+    CellBlockMeta cellBlockMeta;
+    if (cellBlock != null) {
+      cellBlockMeta = CellBlockMeta.newBuilder().setLength(cellBlock.limit()).build();
+    } else {
+      cellBlockMeta = null;
+    }
+    RequestHeader requestHeader = buildRequestHeader(call, cellBlockMeta);
+    //this.qp=rdmaConnect("11.11.0.111",rdma_port); //TODO temp fix
+    this.rdmaconn=rdma.rdmaConnect("11.11.0.111",rdma_port);
+    setupRdmaIOstreams();
 
+    // Now we're going to write the call. We take the lock, then check that the connection
+    // is still valid, and, if so we do the write to the socket. If the write fails, we don't
+    // know where we stand, we have to close the connection.
+    if (Thread.interrupted()) {
+      throw new InterruptedIOException();
+    }
+
+    calls.put(call.id, call); // We put first as we don't want the connection to become idle.
+    // from here, we do not throw any exception to upper layer as the call has been tracked in the
+    // pending calls map.
+    try {
+      call.callStats.setRequestSizeBytes(write(this.rdma_out, requestHeader, call.param, cellBlock));
+      
+      byte[] sbuf=this.rdma_out_stream.toByteArray();
+      LOG.warn("RDMA rdmaWrite");
+      rdmaconn.writeLocal(ByteBuffer.wrap(sbuf));//
+    } catch (Throwable t) {
+      if(LOG.isTraceEnabled()) {
+        LOG.trace("Error while writing call, call_id:" + call.id, t);
+      }
+      IOException e = IPCUtil.toIOE(t);
+      closeConn(e);
+      return;
+    }
+    notifyAll();
+    readRdmaResponse();//we have to add it here,for the normal one is in the run() RGY
+  }
   /*
    * Receive a response. Because only one receiver, so no synchronization on in.
    */
@@ -689,7 +807,94 @@ class BlockingRpcConnection extends RpcConnection implements Runnable {
         if (responseHeader.hasCellBlockMeta()) {
           int size = responseHeader.getCellBlockMeta().getLength();
           byte[] cellBlock = new byte[size];
-          IOUtils.readFully(this.in, cellBlock, 0, cellBlock.length);
+
+            IOUtils.readFully(this.in, cellBlock, 0, cellBlock.length);
+          
+          cellBlockScanner = this.rpcClient.cellBlockBuilder.createCellScanner(this.codec,
+            this.compressor, cellBlock);
+        }
+        call.setResponse(value, cellBlockScanner);
+        call.callStats.setResponseSizeBytes(totalSize);
+        call.callStats
+            .setCallTimeMs(EnvironmentEdgeManager.currentTime() - call.callStats.getStartTime());
+      }
+    } catch (IOException e) {
+      if (expectedCall) {
+        call.setException(e);
+      }
+      if (e instanceof SocketTimeoutException) {
+        // Clean up open calls but don't treat this as a fatal condition,
+        // since we expect certain responses to not make it by the specified
+        // {@link ConnectionId#rpcTimeout}.
+        if (LOG.isTraceEnabled()) {
+          LOG.trace("ignored", e);
+        }
+      } else {
+        synchronized (this) {
+          closeConn(e);
+        }
+      }
+    }
+  }
+  private void readRdmaResponse() {
+    LOG.warn("RDMA readRdmaResponse");
+    Call call = null;
+    boolean expectedCall = false;
+    try {
+      ByteBuffer rbuf=this.rdmaconn.readRemote();
+      rdma_in=new DataInputStream(new ByteArrayInputStream(rbuf.array(),rbuf.arrayOffset(),rbuf.limit()));
+      // See HBaseServer.Call.setResponse for where we write out the response.
+      // Total size of the response. Unused. But have to read it in anyways.
+      int totalSize = rdma_in.readInt();
+
+      // Read the header
+      ResponseHeader responseHeader = ResponseHeader.parseDelimitedFrom(in);
+      int id = responseHeader.getCallId();
+      call = calls.remove(id); // call.done have to be set before leaving this method
+      expectedCall = (call != null && !call.isDone());
+      if (!expectedCall) {
+        // So we got a response for which we have no corresponding 'call' here on the client-side.
+        // We probably timed out waiting, cleaned up all references, and now the server decides
+        // to return a response. There is nothing we can do w/ the response at this stage. Clean
+        // out the wire of the response so its out of the way and we can get other responses on
+        // this connection.
+        int readSoFar = getTotalSizeWhenWrittenDelimited(responseHeader);
+        int whatIsLeftToRead = totalSize - readSoFar;
+        IOUtils.skipFully(in, whatIsLeftToRead);
+        if (call != null) {
+          call.callStats.setResponseSizeBytes(totalSize);
+          call.callStats
+              .setCallTimeMs(EnvironmentEdgeManager.currentTime() - call.callStats.getStartTime());
+        }
+        return;
+      }
+      if (responseHeader.hasException()) {
+        ExceptionResponse exceptionResponse = responseHeader.getException();
+        RemoteException re = createRemoteException(exceptionResponse);
+        call.setException(re);
+        call.callStats.setResponseSizeBytes(totalSize);
+        call.callStats
+            .setCallTimeMs(EnvironmentEdgeManager.currentTime() - call.callStats.getStartTime());
+        if (isFatalConnectionException(exceptionResponse)) {
+          synchronized (this) {
+            closeConn(re);
+          }
+        }
+      } else {
+        Message value = null;
+        if (call.responseDefaultType != null) {
+          Builder builder = call.responseDefaultType.newBuilderForType();
+          ProtobufUtil.mergeDelimitedFrom(builder, in);
+          value = builder.build();
+        }
+        CellScanner cellBlockScanner = null;
+        if (responseHeader.hasCellBlockMeta()) {
+          int size = responseHeader.getCellBlockMeta().getLength();
+          byte[] cellBlock = new byte[size];
+
+            IOUtils.readFully(this.rdma_in, cellBlock, 0, cellBlock.length);
+  
+          
           cellBlockScanner = this.rpcClient.cellBlockBuilder.createCellScanner(this.codec,
             this.compressor, cellBlock);
         }

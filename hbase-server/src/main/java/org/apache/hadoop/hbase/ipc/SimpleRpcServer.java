@@ -83,6 +83,10 @@ import org.apache.hbase.thirdparty.com.google.common.util.concurrent.ThreadFacto
  */
 @InterfaceAudience.LimitedPrivate({HBaseInterfaceAudience.CONFIG})
 public class SimpleRpcServer extends RpcServer {
+  private static RdmaNative rdma;
+  static {
+    System.loadLibrary("rdma");
+  }
 
   protected int port;                             // port we listen on
   protected InetSocketAddress address;            // inet address we listen on
@@ -94,7 +98,9 @@ public class SimpleRpcServer extends RpcServer {
   // maintains the set of client connections and handles idle timeouts
   private ConnectionManager connectionManager;
   private Listener listener = null;
+  private RdmaListener rdmalistener = null;
   protected SimpleRpcServerResponder responder = null;
+  protected SimpleRpcServerRdmaResponder rdmaresponder = null;
 
   /** Listens on the socket. Creates jobs for the handler threads*/
   private class Listener extends Thread {
@@ -364,6 +370,163 @@ public class SimpleRpcServer extends RpcServer {
       return readers[currentReader];
     }
   }
+  private class RdmaListener extends Thread {
+
+    //private ServerSocketChannel acceptChannel = null; //the accept channel
+    //private Selector selector = null; //TODO RDMA selector
+    private Reader[] readers = null;
+    private int currentReader = 0;
+    private final int readerPendingConnectionQueueLength;
+
+    private ExecutorService readPool;
+
+    public RdmaListener(final String name) throws IOException {
+      super(name);
+      SimpleRpcServer.LOG.warn("RDMA listener init");
+      // The backlog of requests that we will have the serversocket carry.
+      int backlogLength = conf.getInt("hbase.ipc.server.listen.queue.size", 128);
+      readerPendingConnectionQueueLength =
+          conf.getInt("hbase.ipc.server.read.connection-queue.size", 100);
+      // Create a new server socket and set to non blocking mode
+
+      // Bind the server socket to the binding addrees (can be different from the default interface)
+     
+
+      readers = new Reader[readThreads];
+      // Why this executor thing? Why not like hadoop just start up all the threads? I suppose it
+      // has an advantage in that it is easy to shutdown the pool.
+      readPool = Executors.newFixedThreadPool(readThreads,
+        new ThreadFactoryBuilder().setNameFormat(
+          "Reader=%d,bindAddress=" + bindAddress.getHostName() +
+          ",port=" + port).setDaemon(true)
+        .setUncaughtExceptionHandler(Threads.LOGGING_EXCEPTION_HANDLER).build());
+      for (int i = 0; i < readThreads; ++i) {
+        Reader reader = new Reader();
+        readers[i] = reader;
+        readPool.execute(reader);
+      }
+      LOG.info(getName() + ": started " + readThreads + " reader(s) listening on port=" + port);
+
+      // Register accepts on the server socket with the selector.
+      //acceptChannel.register(selector, SelectionKey.OP_ACCEPT);
+      this.setName("RdmaListener,port=" + port);
+      this.setDaemon(true);
+    }
+
+
+    private class Reader implements Runnable {
+      final private LinkedBlockingQueue<SimpleServerRdmaRpcConnection> pendingConnections;
+      //private final Selector readSelector;
+
+      Reader() throws IOException {
+        this.pendingConnections = new LinkedBlockingQueue<>(readerPendingConnectionQueueLength);
+        //this.readSelector = Selector.open();
+      }
+
+      @Override
+      public void run() {
+        SimpleRpcServer.LOG.warn("RDMA reader starting");
+          doRunLoop();
+      }
+
+      private synchronized void doRunLoop() {
+        while (running) {
+          try {
+            // Consume as many connections as currently queued to avoid
+            // unbridled acceptance of connections that starves the select
+            //int size = pendingConnections.size();
+            // for (int i=size; i>0; i--) {
+            //   SimpleServerRdmaRpcConnection conn = pendingConnections.take();
+            //   //conn.channel.register(readSelector, SelectionKey.OP_READ, conn);
+            // }
+            //readSelector.select();
+            Iterator<SimpleServerRdmaRpcConnection> iter = pendingConnections.iterator();
+            while (iter.hasNext()) {
+              SimpleServerRdmaRpcConnection  rdma_conn= iter.next();
+                if (rdma_conn.isReadable()) {
+                  doRead(rdma_conn);
+                  iter.remove();
+                }
+              rdma_conn = null;
+            }
+          } catch (InterruptedException e) {
+            if (running) {                      // unexpected -- log it
+              LOG.info(Thread.currentThread().getName() + " unexpectedly interrupted", e);
+            }
+          } catch (CancelledKeyException e) {
+            LOG.error(getName() + ": CancelledKeyException in Reader", e);
+          } 
+        }
+      }
+      void doRead(SimpleServerRdmaRpcConnection c) throws InterruptedException {
+        SimpleRpcServer.LOG.warn("RDMA  reader doRead");
+        int count;
+        if (c == null) {
+          return;
+        }
+        c.setLastContact(System.currentTimeMillis());
+        try {
+          count = c.readAndProcess();//TODO rgy
+        } catch (InterruptedException ieo) {
+          LOG.info(Thread.currentThread().getName() + ": readAndProcess caught InterruptedException", ieo);
+          throw ieo;
+        } catch (Exception e) {
+          if (LOG.isDebugEnabled()) {
+            LOG.debug("Caught exception while reading:", e);
+          }
+          count = -1; //so that the (count < 0) block is executed
+        }
+        if (count < 0) {
+          closeRdmaConnection(c);
+          c = null;
+        } else {
+          c.setLastContact(System.currentTimeMillis());
+        }
+      }
+
+    }
+
+    @Override
+    @edu.umd.cs.findbugs.annotations.SuppressWarnings(value="IS2_INCONSISTENT_SYNC",
+      justification="selector access is not synchronized; seems fine but concerned changing " +
+        "it will have per impact")
+    public void run() {
+      SimpleRpcServer.LOG.warn("RDMA listener start");
+      LOG.info(getName() + ": starting");
+      int i=1;
+      while (running) {
+
+        SimpleServerRdmaRpcConnection rdma_conn=getRdmaConnection(port,System.currentTimeMillis());
+        this.readers[i].pendingConnections.add(rdma_conn);
+      //   synchronized (this.readers[i].lock) {  should we add a lock????
+      //     this.readers[i].lock.notify();
+      // }
+      i++;
+      i = i % readThreads ;//add in a round robin way  
+
+      }
+      LOG.info(getName() + ": stopping");
+      doStop();
+        
+        //TODO rdma_close
+      
+    }
+
+
+
+
+
+
+    synchronized void doStop() {
+      SimpleRpcServer.LOG.warn("RDMA listener doStop");
+      //more TODO RGY
+      //this.readers.doStop();
+
+      readPool.shutdownNow();
+    }
+
+
+  }
 
   /**
    * Constructs a server listening on the named port and address.
@@ -389,10 +552,12 @@ public class SimpleRpcServer extends RpcServer {
     // Start the listener here and let it bind to the port
     listener = new Listener(name);
     this.port = listener.getAddress().getPort();
+    rdmalistener = new RdmaListener(name);
+    //this.rdmaPort = rdmalistener.getAddress().getPort();
 
     // Create the responder here
     responder = new SimpleRpcServerResponder(this);
-    connectionManager = new ConnectionManager();
+    connectionManager = new ConnectionManager(); //TODO RGY
     initReconfigurable(conf);
 
     this.scheduler.init(new RpcSchedulerContext(this));
@@ -405,9 +570,16 @@ public class SimpleRpcServer extends RpcServer {
   protected SimpleServerRpcConnection getConnection(SocketChannel channel, long time) {
     return new SimpleServerRpcConnection(this, channel, time);
   }
-
+  protected SimpleServerRdmaRpcConnection getRdmaConnection(int port, long time) {
+    return new SimpleServerRdmaRpcConnection(this,port, time);
+  }
   protected void closeConnection(SimpleServerRpcConnection connection) {
-    connectionManager.close(connection);
+    connectionManager.close(connection); 
+  }
+
+  protected static void closeRdmaConnection(SimpleServerRdmaRpcConnection connection) {
+    connection.rdmaconn.close();
+    rdma.rdmaDestroyGlobal();//TODO drop rdmaconn from the manager
   }
 
   /** Sets the socket buffer size used for responding to RPCs.
@@ -429,6 +601,7 @@ public class SimpleRpcServer extends RpcServer {
     HBasePolicyProvider.init(conf, authManager);
     responder.start();
     listener.start();
+    rdmalistener.start();
     scheduler.start();
     started = true;
   }
@@ -444,6 +617,8 @@ public class SimpleRpcServer extends RpcServer {
     }
     listener.interrupt();
     listener.doStop();
+    rdmalistener.interrupt();
+    rdmalistener.doStop();
     responder.interrupt();
     scheduler.stop();
     notifyAll();
@@ -488,7 +663,8 @@ public class SimpleRpcServer extends RpcServer {
       Message param, CellScanner cellScanner, long receiveTime, MonitoredRPCHandler status,
       long startTime, int timeout) throws IOException {
     SimpleServerCall fakeCall = new SimpleServerCall(-1, service, md, null, param, cellScanner,
-        null, -1, null, receiveTime, timeout, reservoir, cellBlockBuilder, null, null);
+        null, -1, null, receiveTime, timeout, reservoir, cellBlockBuilder, null, responder);
+        //rgy added respnder to force it to use the normal
     return call(fakeCall, status);
   }
 

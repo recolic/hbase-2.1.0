@@ -61,6 +61,7 @@ abstract class ServerCall<T extends ServerRpcConnection> implements RpcCall, Rpc
   // Optional cell data passed outside of protobufs.
   protected final CellScanner cellScanner;
   protected final T connection;              // connection to client
+  protected final SimpleServerRdmaRpcConnection rdmaconn;
   protected final long receiveTime;      // the time received when response is null
                                  // the time served when response is not null
   protected final int timeout;
@@ -104,6 +105,7 @@ abstract class ServerCall<T extends ServerRpcConnection> implements RpcCall, Rpc
     this.param = param;
     this.cellScanner = cellScanner;
     this.connection = connection;
+    this.rdmaconn = null;
     this.receiveTime = receiveTime;
     this.response = null;
     this.isError = false;
@@ -115,6 +117,32 @@ abstract class ServerCall<T extends ServerRpcConnection> implements RpcCall, Rpc
       this.user = null;
       this.retryImmediatelySupported = false;
     }
+    this.remoteAddress = remoteAddress;
+    this.timeout = timeout;
+    this.deadline = this.timeout > 0 ? this.receiveTime + this.timeout : Long.MAX_VALUE;
+    this.reservoir = reservoir;
+    this.cellBlockBuilder = cellBlockBuilder;
+    this.reqCleanup = reqCleanup;
+  }
+
+  ServerCall(int id, BlockingService service, MethodDescriptor md, RequestHeader header, Message param,
+      CellScanner cellScanner, SimpleServerRdmaRpcConnection rdmaconn, long size, InetAddress remoteAddress, long receiveTime, int timeout,
+      ByteBufferPool reservoir, CellBlockBuilder cellBlockBuilder, CallCleanup reqCleanup) {
+    this.id = id;
+    this.service = service;
+    this.md = md;
+    this.header = header;
+    this.param = param;
+    this.cellScanner = cellScanner;
+    this.connection = null;
+    this.rdmaconn = rdmaconn;
+    this.receiveTime = receiveTime;
+    this.response = null;
+    this.isError = false;
+    this.size = size;
+    this.retryImmediatelySupported = false;
+    this.user = null;//TODO rgy is this right??
+
     this.remoteAddress = remoteAddress;
     this.timeout = timeout;
     this.deadline = this.timeout > 0 ? this.receiveTime + this.timeout : Long.MAX_VALUE;
