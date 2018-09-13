@@ -23,9 +23,7 @@ import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
-import java.net.Socket;
 import java.nio.ByteBuffer;
-import java.nio.channels.ReadableByteChannel;
 import java.nio.channels.SocketChannel;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.LongAdder;
@@ -57,11 +55,6 @@ class SimpleServerRdmaRpcConnection extends ServerRpcConnection {
   static {
     System.loadLibrary("rdma");
   }
-  // public native boolean rdmaDoRespond(Object qp, ByteBuffer sbuf);
-  // public native Object rdmaBlockedAccept(int port);
-  // public native boolean ifReadable(Object qp);
-  // public native ByteBuffer  getrbuf(Object qp);
-  // public native boolean  rdmaisOpen(Object qp);
 
   private RdmaNative rdma;
   public RdmaNative.RdmaConnection rdmaconn;//the core of the rdmaconn class TODO init  these two
@@ -90,16 +83,15 @@ class SimpleServerRdmaRpcConnection extends ServerRpcConnection {
       long lastContact) {
     super(rpcServer);
     this.lastContact = lastContact;
-    this.channel=null;
+    this.channel = null;
     this.data = null;
     this.dataLengthBuffer = ByteBuffer.allocate(4);
     this.hostAddress = null;
     this.remotePort = port;
     this.responder = rpcServer.rdmaresponder;
-    SimpleRpcServer.LOG.warn("RDMA init rdmaconn L98");
-    this.rdmaconn=rdma.rdmaBlockedAccept(port);//??? only return a empty here, ifReadable will ensure it is finished
+    SimpleRpcServer.LOG.warn("RDMA init rdmaconn L98 simpleserverRdmaconn.java");
+    this.rdmaconn = null;//rdma.rdmaBlockedAccept(port);// ??? null pointer?
   }
-
 
   public void setLastContact(long lastContact) {
     this.lastContact = lastContact;

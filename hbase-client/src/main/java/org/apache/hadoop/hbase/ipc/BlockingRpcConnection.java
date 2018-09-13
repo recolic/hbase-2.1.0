@@ -664,7 +664,7 @@ class BlockingRpcConnection extends RpcConnection implements Runnable {
           call.span)) {
        String callMd = call.md.getName();
       if ((!useSasl)&&(this.isRdma) && ((callMd.equals("Get")) || (callMd.equals("Multi")) || (callMd.equals("Scan"))))
-        {LOG.warn("RDMA get a call");
+        {LOG.warn("RDMA get a call with callMd "+ callMd);
         writeRdmaRequest(call);}
       else
         writeRequest(call);
@@ -722,6 +722,7 @@ class BlockingRpcConnection extends RpcConnection implements Runnable {
     }
     RequestHeader requestHeader = buildRequestHeader(call, cellBlockMeta);
     //this.qp=rdmaConnect("11.11.0.111",rdma_port); //TODO temp fix
+    LOG.warn("RDMA rdmaConnect L725");
     this.rdmaconn=rdma.rdmaConnect("11.11.0.111",rdma_port);
     setupRdmaIOstreams();
 
