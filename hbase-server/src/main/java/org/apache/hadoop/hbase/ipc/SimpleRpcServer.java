@@ -578,7 +578,10 @@ public class SimpleRpcServer extends RpcServer {
   }
 
   protected static void closeRdmaConnection(SimpleServerRdmaRpcConnection connection) {
-    connection.rdmaconn.close();
+    if(!connection.rdmaconn.close())
+    {
+      LOG.warn("RDMA close failed L583");
+    }
     rdma.rdmaDestroyGlobal();//TODO drop rdmaconn from the manager
   }
 

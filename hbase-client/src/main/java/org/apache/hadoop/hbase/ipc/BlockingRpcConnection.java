@@ -105,7 +105,7 @@ class BlockingRpcConnection extends RpcConnection implements Runnable {
   private DataOutputStream rdma_out;//TODO rgy init
   private ByteArrayOutputStream rdma_out_stream;
   private RdmaNative rdma;
-  private RdmaNative.RdmaConnection rdmaconn;
+  private RdmaNative.RdmaClientConnection rdmaconn;
   //public Object qp;
   static {
     System.loadLibrary("rdma");
@@ -741,7 +741,10 @@ class BlockingRpcConnection extends RpcConnection implements Runnable {
       
       byte[] sbuf=this.rdma_out_stream.toByteArray();
       LOG.warn("RDMA rdmaWrite");
-      rdmaconn.writeLocal(ByteBuffer.wrap(sbuf));//
+      if(!rdmaconn.writeQuery(ByteBuffer.wrap(sbuf)))
+      {
+        LOG.warn("RDMA writeQuery Failed");
+      }
     } catch (Throwable t) {
       if(LOG.isTraceEnabled()) {
         LOG.trace("Error while writing call, call_id:" + call.id, t);
@@ -842,7 +845,7 @@ class BlockingRpcConnection extends RpcConnection implements Runnable {
     Call call = null;
     boolean expectedCall = false;
     try {
-      ByteBuffer rbuf=this.rdmaconn.readRemote();
+      ByteBuffer rbuf=this.rdmaconn.readResponse();
       rdma_in=new DataInputStream(new ByteArrayInputStream(rbuf.array(),rbuf.arrayOffset(),rbuf.limit()));
       // See HBaseServer.Call.setResponse for where we write out the response.
       // Total size of the response. Unused. But have to read it in anyways.

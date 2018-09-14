@@ -1,30 +1,10 @@
-// package org.apache.hadoop.hbase.ipc;
-
-// import java.nio.ByteBuffer;
-// public class RdmaNative {
-//     public native boolean rdmaIsOpen(Object RdmaConnection);
-//     public native Object rdmaConnect(int port,String addr);
-//     public native Object rdmaBlockedAccept(int port);
-//     public native int rdmaClose(Object RdmaConnection);
-//     public native ByteBuffer rdmaRead(Object RdmaConnection);
-//     public native boolean rdmaReadable(Object RdmaConnection);
-//     public native boolean rdmaWrite(Object RdmaConnection, ByteBuffer sbuf);
-//     public native boolean rdmaRespond(Object RdmaConnection, ByteBuffer sbuf);
-
-//     public class RdmaConnection {
-//         private long ptrQP;
-//     }
-// }
 package org.apache.hadoop.hbase.ipc;
-//org[.]apache[.]yetus[.]audience[.]InterfaceAudience.*
+
 import org.apache.yetus.audience.InterfaceAudience;
-//org.apache.yetus.audience.InterfaceAudience.aaaaa
 import java.nio.ByteBuffer;
+
 @InterfaceAudience.Public
 public class RdmaNative {
-    static {
-        System.loadLibrary("rdma");
-      }
     // This function must be called exactly once to construct necessary structs.
     // It will construct rdmaContext and other global var.
     public native int rdmaInitGlobal();
@@ -32,41 +12,50 @@ public class RdmaNative {
     public native int rdmaDestroyGlobal();
 
     // Connect to remote host. Blocked operation. If success, returnedConn.errorCode holds 0.
-    public native RdmaConnection rdmaConnect(String addr, int port);
+    public native RdmaClientConnection rdmaConnect(String addr, int port);
     // Wait and accept a connection. Blocked operation. If success, returnedConn.errorCode holds 0.
-    public native RdmaConnection rdmaBlockedAccept(int port);
+    public native RdmaServerConnection rdmaBlockedAccept(int port);
 
-    public class RdmaConnection {
-        /* 4ptr is maintained by C++ class.
-        private long ptrQP;
-        private long ptrRegionTokenBuf; // registered as fixed length while making conn.
-        private long ptrRemoteSerialBuf; // remote buffer serial number.
-        private long ptrDynamicDataBuf; // must register on every local write. Invalidate it only if ptrRegionTokenBuf has changed!
+    public class RdmaClientConnection {
+        private long ptrCxxClass;
+
+        public native boolean isClosed();
+        public native boolean isConnectSucceed();
+        public native ByteBuffer readResponse(); // blocked. Will wait for the server for response.
+        public native boolean writeQuery(ByteBuffer data); // blocked until success.
+        public native boolean close(); // You may call it automatically in destructor. It MUST be called once.
+    }
+
+    public class RdmaServerConnection {
+        /* 
+            The server holds two buffer. DynamicBufferTokenBuffer holds std::pair<Magic, DynamicBufferToken>, and DynamicBuffer
+            holds the real data. The Magic is inited to 0x00000000 and set to 0xffffffff if DynamicBufferToken is ready to use.
+            (For the initial 4K buffer, the magic is 0x00000000)
+        begin:
+            On accepting connection, the server creates a 4K DynamicBuffer, and register it, put the token into DynamicBufferTokenBuffer.
+            Then the server send the DynamicBufferTokenBufferToken to client as userData. The client send its query size as userData.
+            If the client's query size is less than 4K, it just write it in the pre-allocated 4K buffer. If the query is larger, 
+            the client must read DynamicBufferTokenBuffer again and again, until the Magic is NOT 0x00000000. Then write the query in.
+            If the query is larger than 4K, the server must resize and register the DynamicBuffer, put its new token into 
+            DynamicBufferTokenBuffer, and set the Magic to 0xffffffff atomically(will atomic CPU instruction works for rdma? It doesn't matter).
+            
+            Once the query is wrote into server, the client must set Magic to 0xaaaaaaaa(use compareAndSwap, if possible. It doesn't matter).
+            The server call isQueryReadable() to check if the Magic is 0xaaaaaaaa. 
+            After the response is ready, the server use writeResponse to write its data to local buffer. (In fact, the memory in ByteBuffer maybe 
+            used and prevent its GC). The DynamicBufferToken is updated, then the Magic is set to 0x55555555. The client check the value again
+            and again. Once available, the client can get the response.
+            I have not consider how should I close the connection. Maybe just destruct the Rdma*Connection, and destruct the insiding C++ QP. 
+            If we want to reuse the connection in the future, just leave the connection there and the server use current DynamicBuffer as initial
+            buffer, goto begin;
         */
         private long ptrCxxClass;
-        private boolean isServer; 
-        private int errorCode;
-        private boolean isClosed;
 
-        // check if this connection is closed.
-        public boolean isClosed() {
-            return this.isClosed;
-        }
-        // true if is server, false if is client.
-        public boolean isServer() {
-            return this.isServer;
-        }
-        // Only used for rdmaConnect and rdmaBlockedAccept.
-        public int getErrorCode() {
-            return this.errorCode;
-        }
-        // Assume remote holds only one buffer. Read the buffer. Blockd call.
-        public native ByteBuffer readRemote();
-        // Use JNI GlobalRef to prevent GC, register this buffer, and replace ptrRegionTokenBuf atomicly for peer read. Blocked call.
-        // Finally, use async rdmaWrite to set remote->ptrRemoteSerialBuf->data(), which will trigger isRemoteReadable soon. // maybe a bool is enough
-        public native int writeLocal(ByteBuffer data); 
-        // Add a serial number into *ptrRegionTokenBuf to implement it.
-        public native boolean isRemoteReadable(); 
-        public native int close();
+        public native boolean isClosed();
+        public native boolean isAcceptSucceed();
+        public native boolean isQueryReadable();
+        // use java global weak ref to prevent gc.
+        public native ByteBuffer readQuery();
+        public native boolean writeResponse(ByteBuffer data);
+        public native boolean close(); // You may call it automatically in destructor. It MUST be called once.
     }
 }

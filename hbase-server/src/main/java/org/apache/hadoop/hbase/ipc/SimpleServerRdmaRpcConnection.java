@@ -57,7 +57,7 @@ class SimpleServerRdmaRpcConnection extends ServerRpcConnection {
   }
 
   private RdmaNative rdma;
-  public RdmaNative.RdmaConnection rdmaconn;//the core of the rdmaconn class TODO init  these two
+  public  RdmaNative.RdmaServerConnection rdmaconn;//the core of the rdmaconn class TODO init  these two
   private ByteBuff data;//TODO init these buffers
   private ByteBuffer dataLengthBuffer;
   private ByteBuffer preambleBuffer;
@@ -103,8 +103,8 @@ class SimpleServerRdmaRpcConnection extends ServerRpcConnection {
   }
 // if it is readable , then just read into the rbuf
   boolean isReadable(){
-    if (rdmaconn.isRemoteReadable()) {
-      this.rbuf=rdmaconn.readRemote();
+    if (rdmaconn.isQueryReadable()) {
+      this.rbuf=rdmaconn.readQuery();
       return true;
     } else {
       return false;
@@ -344,7 +344,7 @@ class SimpleServerRdmaRpcConnection extends ServerRpcConnection {
       SimpleRpcServer.LOG.info("recolic: rdmaHandler::doRespond");
       ByteBuffer sbuf = buf.concat();
       //rdma.rdmaRespond(conn.qp, sbuf);
-      if(conn.rdmaconn.writeLocal(sbuf)==1) //TODO
+      if(conn.rdmaconn.writeResponse(sbuf)) 
       error = true;
       SimpleRpcServer.LOG.warn("RDMA processResponse");
       error = false;

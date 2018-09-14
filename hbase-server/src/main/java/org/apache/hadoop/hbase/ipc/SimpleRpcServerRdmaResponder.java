@@ -92,11 +92,13 @@ class SimpleRpcServerRdmaResponder extends Thread {
     try {
       // Send as much data as we can in the non-blocking fashion
 
-        SimpleRpcServer.LOG.info(" RDMA recolic: rdmaHandler::doRespond");
-        ByteBuffer sbuf=buf.concat();
-        conn.rdmaconn.writeLocal(sbuf);
-        //rdma.rdmaRespond(conn.qp, sbuf);
+      SimpleRpcServer.LOG.info(" RDMA recolic: rdmaHandler::doRespond");
+      ByteBuffer sbuf = buf.concat();
+      if (conn.rdmaconn.writeResponse(sbuf)) // TODO
+        error = true;
+      SimpleRpcServer.LOG.warn("RDMA processResponse");
       error = false;
+
     } finally {
       if (error) {
         SimpleRpcServer.LOG.debug(conn + ": output error -- closing");
