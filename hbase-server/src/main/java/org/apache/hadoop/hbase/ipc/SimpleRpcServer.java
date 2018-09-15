@@ -372,7 +372,6 @@ public class SimpleRpcServer extends RpcServer {
   }
   private class RdmaListener extends Thread {
 
-    //private ServerSocketChannel acceptChannel = null; //the accept channel
     //private Selector selector = null; //TODO RDMA selector
     private Reader[] readers = null;
     private int currentReader = 0;
@@ -451,10 +450,10 @@ public class SimpleRpcServer extends RpcServer {
             }
           } catch (InterruptedException e) {
             if (running) {                      // unexpected -- log it
-              LOG.info(Thread.currentThread().getName() + " unexpectedly interrupted", e);
+              LOG.info(Thread.currentThread().getName() + " unexpectedly interrupted RDMA", e);
             }
           } catch (CancelledKeyException e) {
-            LOG.error(getName() + ": CancelledKeyException in Reader", e);
+            LOG.error(getName() + ": CancelledKeyException in RDMA Reader", e);
           } 
         }
       }
@@ -466,13 +465,13 @@ public class SimpleRpcServer extends RpcServer {
         }
         c.setLastContact(System.currentTimeMillis());
         try {
-          count = c.readAndProcess();//TODO rgy
+          count = c.readAndProcess();
         } catch (InterruptedException ieo) {
-          LOG.info(Thread.currentThread().getName() + ": readAndProcess caught InterruptedException", ieo);
+          LOG.info(Thread.currentThread().getName() + ": RDMA readAndProcess caught InterruptedException", ieo);
           throw ieo;
         } catch (Exception e) {
           if (LOG.isDebugEnabled()) {
-            LOG.debug("Caught exception while reading:", e);
+            LOG.debug("Caught exception while RDMA  reading:", e);
           }
           count = -1; //so that the (count < 0) block is executed
         }
@@ -493,9 +492,9 @@ public class SimpleRpcServer extends RpcServer {
     public void run() {
       SimpleRpcServer.LOG.warn("RDMA listener start");
       LOG.info(getName() + ": starting");
+      rdma.rdmaBind(port);
       int i=1;
       while (running) {
-
         SimpleServerRdmaRpcConnection rdma_conn=getRdmaConnection(port,System.currentTimeMillis());
         this.readers[i].pendingConnections.add(rdma_conn);
       //   synchronized (this.readers[i].lock) {  should we add a lock????
@@ -506,22 +505,13 @@ public class SimpleRpcServer extends RpcServer {
 
       }
       LOG.info(getName() + ": stopping");
-      doStop();
-        
-        //TODO rdma_close
-      
+      doStop();      
     }
-
-
-
-
 
 
     synchronized void doStop() {
       SimpleRpcServer.LOG.warn("RDMA listener doStop");
-      //more TODO RGY
-      //this.readers.doStop();
-
+      rdma.rdmaDestroyGlobal();//listener only need to call rdmaDestroyGlobal??
       readPool.shutdownNow();
     }
 

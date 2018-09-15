@@ -17,14 +17,11 @@
  */
 package org.apache.hadoop.hbase.ipc;
 
-import static io.netty.buffer.Unpooled.*;
-import java.io.ByteArrayInputStream; 
 import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
-import java.nio.channels.SocketChannel;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.Lock;
@@ -58,14 +55,13 @@ class SimpleServerRdmaRpcConnection extends ServerRpcConnection {
 
   private RdmaNative rdma;
   public  RdmaNative.RdmaServerConnection rdmaconn;//the core of the rdmaconn class TODO init  these two
-  private ByteBuff data;//TODO init these buffers
+  private ByteBuff data;
   private ByteBuffer dataLengthBuffer;
   private ByteBuffer preambleBuffer;
   private ByteBuffer rbuf;
   private DataInputStream rdma_in;
   private final LongAdder rpcCount = new LongAdder(); // number of outstanding rpcs
   private long lastContact;
-  //TODO change to RDMA rgy
   final SimpleRpcServerRdmaResponder responder;
   //final RdmaHandler rdmahandler;
 
@@ -86,7 +82,7 @@ class SimpleServerRdmaRpcConnection extends ServerRpcConnection {
     this.remotePort = port;
     this.responder = rpcServer.rdmaresponder;
     SimpleRpcServer.LOG.warn("RDMA init rdmaconn L98 simpleserverRdmaconn.java");
-    this.rdmaconn = rdma.rdmaBlockedAccept(port);// ??? null pointer?
+    this.rdmaconn = rdma.rdmaBlockedAccept();// ??? null pointer?
   }
 
   public void setLastContact(long lastContact) {
@@ -309,10 +305,13 @@ class SimpleServerRdmaRpcConnection extends ServerRpcConnection {
 
   @Override
   public synchronized void close() {
-   
+    if(!rdmaconn.close())
+    {
+      SimpleRpcServer.LOG.warn("RDMA close failed L583");
+    }
+    rdma.rdmaDestroyGlobal();
     data = null;
     callCleanup = null;
-   //TODO rdma close
     
   }
 
@@ -332,7 +331,7 @@ class SimpleServerRdmaRpcConnection extends ServerRpcConnection {
 
   @Override
   protected void doRespond(RpcResponse resp) throws IOException {
-    processResponse(this, resp);
+    processResponse(this, resp);// this should be okey if we just respond it here,without a responder? TODO
   }
 
   private boolean processResponse(SimpleServerRdmaRpcConnection conn, RpcResponse resp) throws IOException {
