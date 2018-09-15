@@ -89,6 +89,7 @@ public class SimpleRpcServer extends RpcServer {
   }
 
   protected int port;                             // port we listen on
+  protected int rdmaPort;//rdma listener port
   protected InetSocketAddress address;            // inet address we listen on
   private int readThreads;                        // number of read threads
 
@@ -492,10 +493,10 @@ public class SimpleRpcServer extends RpcServer {
     public void run() {
       SimpleRpcServer.LOG.warn("RDMA listener start");
       LOG.info(getName() + ": starting");
-      rdma.rdmaBind(port);
+      rdma.rdmaBind(rdmaPort);
       int i=1;
       while (running) {
-        SimpleServerRdmaRpcConnection rdma_conn=getRdmaConnection(port,System.currentTimeMillis());
+        SimpleServerRdmaRpcConnection rdma_conn=getRdmaConnection(rdmaPort,System.currentTimeMillis());
         this.readers[i].pendingConnections.add(rdma_conn);
       //   synchronized (this.readers[i].lock) {  should we add a lock????
       //     this.readers[i].lock.notify();
@@ -543,6 +544,7 @@ public class SimpleRpcServer extends RpcServer {
     listener = new Listener(name);
     this.port = listener.getAddress().getPort();
     rdmalistener = new RdmaListener(name);
+    this.rdmaPort=port+1;//TODO get it from conf
     //this.rdmaPort = rdmalistener.getAddress().getPort();
 
     // Create the responder here
