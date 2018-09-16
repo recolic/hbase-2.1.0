@@ -545,7 +545,7 @@ public class SimpleRpcServer extends RpcServer {
     listener = new Listener(name);
     this.port = listener.getAddress().getPort();
     rdmalistener = new RdmaListener(name);
-    this.rdmaPort=port+1;//TODO get it from conf
+    this.rdmaPort=2333;//TODO get it from conf
     //this.rdmaPort = rdmalistener.getAddress().getPort();
 
     // Create the responder here
