@@ -1,3 +1,4 @@
+
 package org.apache.hadoop.hbase.ipc;
 import org.apache.yetus.audience.InterfaceAudience;
 import java.nio.ByteBuffer;
@@ -8,31 +9,31 @@ public class RdmaNative {
       }
     // This function must be called exactly once to construct necessary structs.
     // It will construct rdmaContext and other global var.
-    public native boolean rdmaInitGlobal();
+    public static native boolean rdmaInitGlobal();
     // This function must be called exactly once to destruct global structs.
-    public native void rdmaDestroyGlobal();
+    public static native void rdmaDestroyGlobal();
 
     // Connect to remote host. Blocked operation. If success, returnedConn.errorCode holds 0.
-    public native RdmaClientConnection rdmaConnect(String addr, int port);
+    public static native RdmaClientConnection rdmaConnect(String addr, int port);
     // This function must be called once by server, to bind a port.
-    public native boolean rdmaBind(int port);
+    public static native boolean rdmaBind(int port);
     // Wait and accept a connection. Blocked operation. If success, returnedConn.errorCode holds 0.
-    public native RdmaServerConnection rdmaBlockedAccept();
+    public static native RdmaServerConnection rdmaBlockedAccept();
 
-    public class RdmaClientConnection {
+    public static class RdmaClientConnection {
         private long ptrCxxClass;
         private int errorCode;
 
-        public native boolean isClosed();
+        public static native boolean isClosed();
         public boolean isConnectSucceed() {
             return errorCode == 0;
         }
-        public native ByteBuffer readResponse(); // blocked. Will wait for the server for response.
-        public native boolean writeQuery(ByteBuffer data); // blocked until success.
-        public native boolean close(); // You may call it automatically in destructor. It MUST be called once.
+        public static native ByteBuffer readResponse(); // blocked. Will wait for the server for response.
+        public static native boolean writeQuery(ByteBuffer data); // blocked until success.
+        public static native boolean close(); // You may call it automatically in destructor. It MUST be called once.
     }
 
-    public class RdmaServerConnection {
+    public static class RdmaServerConnection {
         /* 
             The server holds two buffer. DynamicBufferTokenBuffer holds std::pair<Magic, DynamicBufferToken>, and DynamicBuffer
             holds the real data. The Magic is inited to 0x00000000 and set to 0xffffffff if DynamicBufferToken is ready to use.
@@ -59,14 +60,14 @@ public class RdmaNative {
         private long ptrCxxClass;
         private int errorCode;
 
-        public native boolean isClosed();
+        public static native boolean isClosed();
         public boolean isAcceptSucceed() {
             return errorCode == 0;
         }
-        public native boolean isQueryReadable();
+        public static native boolean isQueryReadable();
         // use java global weak ref to prevent gc.
-        public native ByteBuffer readQuery();
-        public native boolean writeResponse(ByteBuffer data);
-        public native boolean close(); // You may call it automatically in destructor. It MUST be called once.
+        public static native ByteBuffer readQuery();
+        public static native boolean writeResponse(ByteBuffer data);
+        public static native boolean close(); // You may call it automatically in destructor. It MUST be called once.
     }
 }

@@ -236,7 +236,7 @@ class BlockingRpcConnection extends RpcConnection implements Runnable {
     if (remoteId.getAddress().isUnresolved()) {
       throw new UnknownHostException("unknown host: " + remoteId.getAddress().getHostName());
     }
-
+    //this.rdma = new RdmaNative rdma;
     this.connectionHeaderPreamble = getConnectionHeaderPreamble();
     ConnectionHeader header = getConnectionHeader();
     ByteArrayOutputStream baos = new ByteArrayOutputStream(4 + header.getSerializedSize());
