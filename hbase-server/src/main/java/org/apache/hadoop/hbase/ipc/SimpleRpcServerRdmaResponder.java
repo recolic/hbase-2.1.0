@@ -43,7 +43,7 @@ import org.apache.hadoop.util.StringUtils;
 class SimpleRpcServerRdmaResponder extends Thread {
   //public native boolean rdmaDoRespond(Object qp, ByteBuffer sbuf);
   static {
-    System.loadLibrary("rdma");
+    System.loadLibrary("RdmaNative");
   }
   private final SimpleRpcServer simpleRpcServer;
   private   ConcurrentLinkedDeque<SimpleServerRdmaRpcConnection> connsQueue;

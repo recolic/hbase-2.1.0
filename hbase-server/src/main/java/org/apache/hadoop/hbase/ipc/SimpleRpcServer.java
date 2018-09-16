@@ -85,7 +85,7 @@ import org.apache.hbase.thirdparty.com.google.common.util.concurrent.ThreadFacto
 public class SimpleRpcServer extends RpcServer {
   private static RdmaNative rdma;
   static {
-    System.loadLibrary("rdma");
+    System.loadLibrary("RdmaNative");
   }
 
   protected int port;                             // port we listen on
@@ -493,6 +493,7 @@ public class SimpleRpcServer extends RpcServer {
     public void run() {
       SimpleRpcServer.LOG.warn("RDMA listener start");
       LOG.info(getName() + ": starting");
+      rdma.rdmaInitGlobal();
       rdma.rdmaBind(rdmaPort);
       int i=1;
       while (running) {

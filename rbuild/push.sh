@@ -1,6 +1,13 @@
 #!/bin/bash
+ID='-i /home/rgy/.ssh/aliyun/id_rsa -P 25568  rdma_match@proxy.recolic.net'
+#ID=' -i ~/.ssh/aliyun/id_rsa  rdma_match@202.114.10.172'
 
-rsync -rh --progress bin root@mc.recolic.net:/var/www/html/tmp &&
-ssh root@mc.recolic.net 'cd /var/www/html/tmp ; and tar -cvzf bin.tar.gz bin/' &&
-ssh ubuntu@drive.recolic.net './rdma.sh "cd ~/tmp && mcget.sh bin.tar.gz -O ./bin.tar.gz && rm -rf bin ; rm -rf bin && decomp bin.tar.gz"'
+cd ./rbuild/bin/lib
+echo "
+cd ./hbase-2.1.0/lib/
+ls
+lls
+put ./*.jar
+"|sftp $ID
+echo done.
 

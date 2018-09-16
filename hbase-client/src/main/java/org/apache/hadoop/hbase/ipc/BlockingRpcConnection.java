@@ -108,7 +108,7 @@ class BlockingRpcConnection extends RpcConnection implements Runnable {
   private RdmaNative.RdmaClientConnection rdmaconn;
   //public Object qp;
   static {
-    System.loadLibrary("rdma");
+    System.loadLibrary("RdmaNative");
   }
   //public native  Boolean rdmaWrite(Object qp, ByteBuffer sbuf);
   //public native  Object  rdmaConnect(String serverIp, int serverPort);
@@ -722,8 +722,11 @@ class BlockingRpcConnection extends RpcConnection implements Runnable {
     }
     RequestHeader requestHeader = buildRequestHeader(call, cellBlockMeta);
     //this.qp=rdmaConnect("11.11.0.111",rdma_port); //TODO temp fix
-    LOG.warn("RDMA rdmaConnect L725");
+    rdma.rdmaInitGlobal();
+    LOG.warn("RDMA init done L726");
+    LOG.warn("RDMA rdmaConnect L727");
     this.rdmaconn=rdma.rdmaConnect("11.11.0.111",rdma_port);
+    LOG.warn("RDMA rdmaConnect done "+this.rdmaconn);
     setupRdmaIOstreams();
 
     // Now we're going to write the call. We take the lock, then check that the connection

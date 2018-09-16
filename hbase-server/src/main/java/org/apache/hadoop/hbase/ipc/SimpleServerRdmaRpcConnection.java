@@ -50,7 +50,7 @@ import org.apache.hadoop.hbase.util.Pair;
 class SimpleServerRdmaRpcConnection extends ServerRpcConnection {
 
   static {
-    System.loadLibrary("rdma");
+    System.loadLibrary("RdmaNative");
   }
 
   private RdmaNative rdma;
@@ -309,7 +309,7 @@ class SimpleServerRdmaRpcConnection extends ServerRpcConnection {
     {
       SimpleRpcServer.LOG.warn("RDMA close failed L583");
     }
-    rdma.rdmaDestroyGlobal();
+    //rdma.rdmaDestroyGlobal();
     data = null;
     callCleanup = null;
     

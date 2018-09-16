@@ -1,4 +1,3 @@
-
 package org.apache.hadoop.hbase.ipc;
 import org.apache.yetus.audience.InterfaceAudience;
 import java.nio.ByteBuffer;
