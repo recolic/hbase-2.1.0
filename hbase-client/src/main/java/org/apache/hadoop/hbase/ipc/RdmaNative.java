@@ -4,6 +4,9 @@ import org.apache.yetus.audience.InterfaceAudience;
 import java.nio.ByteBuffer;
 @InterfaceAudience.Public
 public class RdmaNative {
+    static {
+        System.loadLibrary("RdmaNative");
+      }
     // This function must be called exactly once to construct necessary structs.
     // It will construct rdmaContext and other global var.
     public native boolean rdmaInitGlobal();
