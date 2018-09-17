@@ -113,7 +113,7 @@ class BlockingRpcConnection extends RpcConnection implements Runnable {
   //public native  Boolean rdmaWrite(Object qp, ByteBuffer sbuf);
   //public native  Object  rdmaConnect(String serverIp, int serverPort);
   //public native  ByteBuffer rdmaRead(Object qp);
-  public int rdma_port=2333;
+  public int rdmaPort=2333;
   private HBaseSaslRpcClient saslRpcClient;
 
   // currently active calls
@@ -721,11 +721,12 @@ class BlockingRpcConnection extends RpcConnection implements Runnable {
       cellBlockMeta = null;
     }
     RequestHeader requestHeader = buildRequestHeader(call, cellBlockMeta);
-    //this.qp=rdmaConnect("11.11.0.111",rdma_port); //TODO temp fix
+    //this.qp=rdmaConnect("11.11.0.111",rdmaPort); //TODO temp fix
     rdma.rdmaInitGlobal();
     LOG.warn("RDMA init done L726");
-    LOG.warn("RDMA rdmaConnect L727");
-    this.rdmaconn=rdma.rdmaConnect("11.11.0.111",rdma_port);
+    LOG.warn("RDMA rdmaConnect L727 with addr and port "+rdmaPort);
+
+    this.rdmaconn=rdma.rdmaConnect("11.11.0.111",rdmaPort);
     LOG.warn("RDMA rdmaConnect done "+this.rdmaconn);
     setupRdmaIOstreams();
 

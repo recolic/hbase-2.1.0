@@ -491,7 +491,7 @@ public class SimpleRpcServer extends RpcServer {
       justification="selector access is not synchronized; seems fine but concerned changing " +
         "it will have per impact")
     public void run() {
-      SimpleRpcServer.LOG.warn("RDMA listener start");
+      SimpleRpcServer.LOG.warn("RDMA listener start and bind at port "+ rdmaPort);
       LOG.info(getName() + ": starting");
       rdma.rdmaInitGlobal();
       rdma.rdmaBind(rdmaPort);
