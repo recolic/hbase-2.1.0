@@ -725,8 +725,9 @@ class BlockingRpcConnection extends RpcConnection implements Runnable {
     rdma.rdmaInitGlobal();
     LOG.warn("RDMA init done L726");
     LOG.warn("RDMA rdmaConnect L727 with addr and port "+rdmaPort);
-
-    this.rdmaconn=rdma.rdmaConnect("11.11.0.111",rdmaPort);
+    
+    do this.rdmaconn=rdma.rdmaConnect("11.11.0.111",rdmaPort);
+    while (this.rdmaconn==null);  
     LOG.warn("RDMA rdmaConnect done "+this.rdmaconn);
     setupRdmaIOstreams();
 

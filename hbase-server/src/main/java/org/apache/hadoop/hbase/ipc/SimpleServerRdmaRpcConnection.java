@@ -82,7 +82,9 @@ class SimpleServerRdmaRpcConnection extends ServerRpcConnection {
     this.remotePort = port;
     this.responder = rpcServer.rdmaresponder;
     SimpleRpcServer.LOG.warn("RDMA init rdmaconn L98 simpleserverRdmaconn.java");
-    this.rdmaconn = rdma.rdmaBlockedAccept();// ??? null pointer?
+    do this.rdmaconn = rdma.rdmaBlockedAccept();
+         while (this.rdmaconn==null);  
+    SimpleRpcServer.LOG.warn("RDMA init done!");// ??? null pointer?
   }
 
   public void setLastContact(long lastContact) {
