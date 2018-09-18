@@ -49,9 +49,6 @@ import org.apache.hadoop.hbase.util.Pair;
 @InterfaceAudience.Private
 class SimpleServerRdmaRpcConnection extends ServerRpcConnection {
 
-  static {
-    System.loadLibrary("RdmaNative");
-  }
 
   private RdmaNative rdma;
   public  RdmaNative.RdmaServerConnection rdmaconn;//the core of the rdmaconn class TODO init  these two
@@ -161,7 +158,7 @@ class SimpleServerRdmaRpcConnection extends ServerRpcConnection {
    * @throws IOException
    * @throws InterruptedException
    */
-  public int readAndProcess() throws IOException, InterruptedException {
+  public int readAndProcess() throws IOException, InterruptedException {//TODO RGY change to better responder
     SimpleRpcServer.LOG.warn("RDMA readAndProcess  178");
     // If we have not read the connection setup preamble, look to see if that is on the wire.
     //rdma_in=new DataInputStream(new ByteArrayInputStream(rbuf.array(),rbuf.arrayOffset(),rbuf.limit()));

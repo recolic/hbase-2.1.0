@@ -106,13 +106,7 @@ class BlockingRpcConnection extends RpcConnection implements Runnable {
   private ByteArrayOutputStream rdma_out_stream;
   private RdmaNative rdma;
   private RdmaNative.RdmaClientConnection rdmaconn;
-  //public Object qp;
-  static {
-    System.loadLibrary("RdmaNative");
-  }
-  //public native  Boolean rdmaWrite(Object qp, ByteBuffer sbuf);
-  //public native  Object  rdmaConnect(String serverIp, int serverPort);
-  //public native  ByteBuffer rdmaRead(Object qp);
+
   public int rdmaPort=2333;
   private HBaseSaslRpcClient saslRpcClient;
 
