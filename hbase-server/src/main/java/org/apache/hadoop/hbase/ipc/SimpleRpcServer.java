@@ -499,6 +499,7 @@ public class SimpleRpcServer extends RpcServer {
       while (running) {
         SimpleServerRdmaRpcConnection rdma_conn=getRdmaConnection(rdmaPort,System.currentTimeMillis());
         this.readers[i].pendingConnections.add(rdma_conn);
+      SimpleRpcServer.LOG.warn("RDMA listener add a conn to reader "+ i);
       //   synchronized (this.readers[i].lock) {  should we add a lock????
       //     this.readers[i].lock.notify();
       // }
