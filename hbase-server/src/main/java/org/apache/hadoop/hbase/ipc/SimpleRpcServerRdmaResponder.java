@@ -45,7 +45,7 @@ class SimpleRpcServerRdmaResponder extends Thread {
 
   private final SimpleRpcServer simpleRpcServer;
   private   ConcurrentLinkedDeque<SimpleServerRdmaRpcConnection> connsQueue;
-  private RdmaNative rdma;
+  private RdmaNative rdma= new  RdmaNative();
 
 
   SimpleRpcServerRdmaResponder(SimpleRpcServer simpleRpcServer) throws IOException {

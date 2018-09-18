@@ -50,7 +50,7 @@ import org.apache.hadoop.hbase.util.Pair;
 class SimpleServerRdmaRpcConnection extends ServerRpcConnection {
 
 
-  private RdmaNative rdma;
+  private RdmaNative rdma= new RdmaNative();
   public  RdmaNative.RdmaServerConnection rdmaconn;//the core of the rdmaconn class TODO init  these two
   private ByteBuff data;
   private ByteBuffer dataLengthBuffer;
