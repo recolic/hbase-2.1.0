@@ -323,7 +323,7 @@ public class HMaster extends HRegionServer implements MasterServices {
 
   public static final String HBASE_MASTER_WAIT_ON_SERVICE_IN_SECONDS =
     "hbase.master.wait.on.service.seconds";
-  public static final int DEFAULT_HBASE_MASTER_WAIT_ON_SERVICE_IN_SECONDS = 5 * 60;
+  public static final int DEFAULT_HBASE_MASTER_WAIT_ON_SERVICE_IN_SECONDS = 200;
 
   // Metrics for the HMaster
   final MetricsMaster metricsMaster;
@@ -835,7 +835,6 @@ public class HMaster extends HRegionServer implements MasterServices {
         "ActiveMasterInitializationMonitor-" + System.currentTimeMillis());
     zombieDetector.setDaemon(true);
     zombieDetector.start();
-
     /*
      * We are active master now... go initialize components we need to run.
      */
@@ -850,7 +849,6 @@ public class HMaster extends HRegionServer implements MasterServices {
 
     // enable table descriptors cache
     this.tableDescriptors.setCacheOn();
-
     // warm-up HTDs cache on master initialization
     if (preLoadTableDescriptors) {
       status.setStatus("Pre-loading table descriptors");
@@ -864,7 +862,6 @@ public class HMaster extends HRegionServer implements MasterServices {
     status.setStatus("Publishing Cluster ID " + clusterId + " in ZooKeeper");
     ZKClusterId.setClusterId(this.zooKeeper, fileSystemManager.getClusterId());
     this.clusterId = clusterId.toString();
-
 
 
     status.setStatus("Initialze ServerManager and schedule SCP for crash servers");
@@ -906,7 +903,6 @@ public class HMaster extends HRegionServer implements MasterServices {
     // initialize master side coprocessors before we start handling requests
     status.setStatus("Initializing master coprocessors");
     this.cpHost = new MasterCoprocessorHost(this, this.conf);
-
     status.setStatus("Initializing meta table if this is a new deploy");
     InitMetaProcedure initMetaProc = null;
     if (assignmentManager.getRegionStates().getRegionState(RegionInfoBuilder.FIRST_META_REGIONINFO)
@@ -929,7 +925,6 @@ public class HMaster extends HRegionServer implements MasterServices {
     this.balancer.setMasterServices(this);
     this.balancer.setClusterMetrics(getClusterMetricsWithoutCoprocessor());
     this.balancer.initialize();
-
     // start up all service threads.
     status.setStatus("Initializing master service threads");
     startServiceThreads();
@@ -940,7 +935,6 @@ public class HMaster extends HRegionServer implements MasterServices {
     tableStateManager.start();
     // Wake up this server to check in
     sleeper.skipSleepCycle();
-
     // Wait for region servers to report in.
     // With this as part of master initialization, it precludes our being able to start a single
     // server that is both Master and RegionServer. Needs more thought. TODO.
@@ -953,7 +947,6 @@ public class HMaster extends HRegionServer implements MasterServices {
     if (isStopped()) {
       return;
     }
-
     //Initialize after meta as it scans meta
     if (favoredNodesManager != null) {
       SnapshotOfRegionAssignmentFromMeta snapshotOfRegionAssignment =
@@ -961,11 +954,9 @@ public class HMaster extends HRegionServer implements MasterServices {
       snapshotOfRegionAssignment.initialize();
       favoredNodesManager.initialize(snapshotOfRegionAssignment);
     }
-
     // Fix up assignment manager status
     status.setStatus("Starting assignment manager");
-    this.assignmentManager.joinCluster();
-
+    this.assignmentManager.joinCluster(); 
     // set cluster status again after user regions are assigned
     this.balancer.setClusterMetrics(getClusterMetricsWithoutCoprocessor());
 
@@ -979,10 +970,8 @@ public class HMaster extends HRegionServer implements MasterServices {
     getChoreService().scheduleChore(normalizerChore);
     this.catalogJanitorChore = new CatalogJanitor(this);
     getChoreService().scheduleChore(catalogJanitorChore);
-
     status.setStatus("Starting cluster schema service");
     initClusterSchemaService();
-
     if (this.cpHost != null) {
       try {
         this.cpHost.preMasterInitialization();
@@ -990,9 +979,9 @@ public class HMaster extends HRegionServer implements MasterServices {
         LOG.error("Coprocessor preMasterInitialization() hook failed", e);
       }
     }
-
+    
     status.markComplete("Initialization successful");
-    LOG.info(String.format("Master has completed initialization %.3fsec",
+    LOG.info(String.format("  Master has completed initialization %.3fsec",
        (System.currentTimeMillis() - masterActiveTime) / 1000.0f));
     this.masterFinishedInitializationTime = System.currentTimeMillis();
     configurationManager.registerObserver(this.balancer);
@@ -1030,7 +1019,7 @@ public class HMaster extends HRegionServer implements MasterServices {
 
     status.setStatus("Initializing MOB Cleaner");
     initMobCleaner();
-
+    //LOG.warn("RDMA debug init hmaster 3.4");
     status.setStatus("Calling postStartMaster coprocessors");
     if (this.cpHost != null) {
       // don't let cp initialization errors kill the master
@@ -1134,6 +1123,7 @@ public class HMaster extends HRegionServer implements MasterServices {
   protected void initClusterSchemaService() throws IOException, InterruptedException {
     this.clusterSchemaService = new ClusterSchemaServiceImpl(this);
     this.clusterSchemaService.startAsync();
+
     try {
       this.clusterSchemaService.awaitRunning(getConfiguration().getInt(
         HBASE_MASTER_WAIT_ON_SERVICE_IN_SECONDS,
@@ -1815,6 +1805,7 @@ public class HMaster extends HRegionServer implements MasterServices {
       final byte [][] splitKeys,
       final long nonceGroup,
       final long nonce) throws IOException {
+        LOG.warn("HMaster createTable()");
     checkInitialized();
 
     String namespace = tableDescriptor.getTableName().getNamespaceAsString();

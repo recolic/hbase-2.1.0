@@ -30,6 +30,7 @@ import java.nio.channels.Channels;
 import java.nio.channels.ReadableByteChannel;
 import java.security.GeneralSecurityException;
 import java.util.Properties;
+import java.nio.charset.StandardCharsets;
 
 import org.apache.commons.crypto.cipher.CryptoCipherFactory;
 import org.apache.commons.crypto.random.CryptoRandom;
@@ -95,7 +96,7 @@ abstract class ServerRpcConnection implements Closeable {
   // disconnected, we can say where it used to connect to.
   protected String hostAddress;
   protected int remotePort;
-  protected InetAddress addr;
+  protected InetAddress addr;//TODO Y00 RDMA get rdma init of this 
   protected ConnectionHeader connectionHeader;
 
   /**
@@ -451,9 +452,19 @@ abstract class ServerRpcConnection implements Closeable {
 
   public void processOneRpc(ByteBuff buf) throws IOException,
       InterruptedException {
+        // int rbuflength = buf.remaining();
+        // byte[] arr = new byte[buf.remaining()];
+        // buf.get(arr);
+        buf.rewind();
+    //  SimpleRpcServer.LOG.warn("RDMA/normal processOneRpc  content and length"
+    //   +" "+ StandardCharsets.UTF_8.decode(ByteBuffer.wrap(arr)).toString()+" length "+
+    //   rbuflength);
+
     if (connectionHeaderRead) {
+      //SimpleRpcServer.LOG.warn("RDMA/normal processOneRpc processRequest");
       processRequest(buf);
     } else {
+      //SimpleRpcServer.LOG.warn("RDMA/normal processOneRpc processConnectionHeader");
       processConnectionHeader(buf);
       this.connectionHeaderRead = true;
       if (!authorizeConnection()) {
@@ -502,6 +513,7 @@ abstract class ServerRpcConnection implements Closeable {
     String serviceName = connectionHeader.getServiceName();
     if (serviceName == null) throw new EmptyServiceNameException();
     this.service = RpcServer.getService(this.rpcServer.services, serviceName);
+    //RpcServer.LOG.warn("RDMA debug get the service "+serviceName);
     if (this.service == null) throw new UnknownServiceException(serviceName);
     setupCellBlockCodecs(this.connectionHeader);
     RPCProtos.ConnectionHeaderResponse.Builder chrBuilder =
@@ -553,7 +565,7 @@ abstract class ServerRpcConnection implements Closeable {
     } else {
       version = "UNKNOWN";
     }
-    RpcServer.AUDITLOG.info("Connection from {}:{}, version={}, sasl={}, ugi={}, service={}",
+    RpcServer.AUDITLOG.warn("Connection from {}:{}, version={}, sasl={}, ugi={}, service={}",
         this.hostAddress, this.remotePort, version, this.useSasl, this.ugi, serviceName);
   }
 
@@ -615,10 +627,10 @@ abstract class ServerRpcConnection implements Closeable {
     RequestHeader header = (RequestHeader) builder.build();
     offset += headerSize;
     int id = header.getCallId();
-    if (RpcServer.LOG.isTraceEnabled()) {
-      RpcServer.LOG.trace("RequestHeader " + TextFormat.shortDebugString(header)
-          + " totalRequestSize: " + totalRequestSize + " bytes");
-    }
+    //if (RpcServer.LOG.isTraceEnabled()) {
+      //RpcServer.LOG.warn("RequestHeader " + TextFormat.shortDebugString(header)
+      //    + " the service "+this.service);
+    //}
     // Enforcing the call queue size, this triggers a retry in the client
     // This is a bit late to be doing this check - we have already read in the
     // total request.
@@ -638,6 +650,10 @@ abstract class ServerRpcConnection implements Closeable {
     CellScanner cellScanner = null;
     try {
       if (header.hasRequestParam() && header.getRequestParam()) {
+        if(this.service==null) {
+          RpcServer.LOG.warn("RDMA service == null, we will init it here");
+        this.service = RpcServer.getService(this.rpcServer.services, "ClientService");
+      }
         md = this.service.getDescriptorForType().findMethodByName(
             header.getMethodName());
         if (md == null)
@@ -699,13 +715,15 @@ abstract class ServerRpcConnection implements Closeable {
     }
     ServerCall<?> call = createCall(id, this.service, md, header, param, cellScanner, totalRequestSize,
       this.addr, timeout, this.callCleanup);
-
+    //RDMA core bug, here the this.rpcServer
+    //RpcServer.LOG.warn("RDMA debug this rpcServer at "+this.rpcServer.bindAddress.toString());
     if (!this.rpcServer.scheduler.dispatch(new CallRunner(this.rpcServer, call))) {
       this.rpcServer.callQueueSizeInBytes.add(-1 * call.getSize());
       this.rpcServer.metrics.exception(RpcServer.CALL_QUEUE_TOO_BIG_EXCEPTION);
       call.setResponse(null, null, RpcServer.CALL_QUEUE_TOO_BIG_EXCEPTION,
         "Call queue is full on " + this.rpcServer.server.getServerName() +
             ", too many items queued ?");
+     // RpcServer.LOG.warn("RDMA debug failed at dispatch ");
       call.sendResponseIfReady();
     }
   }

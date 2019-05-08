@@ -93,10 +93,9 @@ public class TableNamespaceManager implements Stoppable {
   public void start() throws IOException {
     if (!MetaTableAccessor.tableExists(masterServices.getConnection(),
         TableName.NAMESPACE_TABLE_NAME)) {
-      LOG.info("Namespace table not found. Creating...");
+      LOG.info(" Namespace table not found. Creating...");
       createNamespaceTable(masterServices);
     }
-
     try {
       // Wait for the namespace table to be initialized.
       long startTime = EnvironmentEdgeManager.currentTime();
@@ -267,7 +266,6 @@ public class TableNamespaceManager implements Stoppable {
     if (isTableNamespaceManagerInitialized()) {
       return true;
     }
-
     // Now check if the table is assigned, if not then fail fast
     if (isTableAssigned() && isTableEnabled()) {
       try {
@@ -275,7 +273,6 @@ public class TableNamespaceManager implements Stoppable {
         nsTable = this.masterServices.getConnection().getTable(TableName.NAMESPACE_TABLE_NAME);
         zkNamespaceManager = new ZKNamespaceManager(masterServices.getZooKeeper());
         zkNamespaceManager.start();
-
         if (get(nsTable, NamespaceDescriptor.DEFAULT_NAMESPACE.getName()) == null) {
           blockingCreateNamespace(NamespaceDescriptor.DEFAULT_NAMESPACE);
         }
@@ -287,7 +284,6 @@ public class TableNamespaceManager implements Stoppable {
           // some required namespace is created asynchronized. We should complete init later.
           return false;
         }
-
         ResultScanner scanner = nsTable.getScanner(HTableDescriptor.NAMESPACE_FAMILY_INFO_BYTES);
         try {
           for (Result result : scanner) {
@@ -305,7 +301,7 @@ public class TableNamespaceManager implements Stoppable {
         initialized = true;
         return true;
       } catch (IOException ie) {
-        LOG.warn("Caught exception in initializing namespace table manager", ie);
+        LOG.warn(" Caught exception in initializing namespace table manager", ie);
         if (nsTable != null) {
           nsTable.close();
         }

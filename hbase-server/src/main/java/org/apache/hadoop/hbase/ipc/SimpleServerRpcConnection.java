@@ -28,7 +28,7 @@ import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
-
+import java.nio.charset.StandardCharsets;
 import org.apache.hadoop.hbase.CellScanner;
 import org.apache.hadoop.hbase.DoNotRetryIOException;
 import org.apache.yetus.audience.InterfaceAudience;
@@ -92,6 +92,7 @@ class SimpleServerRpcConnection extends ServerRpcConnection {
     }
     this.responder = rpcServer.responder;
   }
+
 
   public void setLastContact(long lastContact) {
     this.lastContact = lastContact;
@@ -242,9 +243,19 @@ class SimpleServerRpcConnection extends ServerRpcConnection {
       // the response. If we want the connection to be detected as idle properly, we
       // need to keep the inc / dec correct.
       incRpcCount();
+      //SimpleRpcServer.LOG.info("SimpleRpcConn readAndProcess() init buffer length "+dataLength);
     }
 
     count = channelDataRead(channel, data);
+
+    // byte[] arr = new byte[data.remaining()];//don't do the dump here!!
+    // data.put(arr);
+    // SimpleRpcServer.LOG.warn("RDMA normal get data section content" +" "+
+    // StandardCharsets.UTF_8.decode(ByteBuffer.wrap(arr)).toString());
+    // data.rewind();
+    //rewind to get it back
+
+    //SimpleRpcServer.LOG.info("SimpleRpcConn readAndProcess() read data length "+count);
 
     if (count >= 0 && data.remaining() == 0) { // count==0 if dataLength == 0
       process();
@@ -288,6 +299,10 @@ class SimpleServerRpcConnection extends ServerRpcConnection {
    */
   private void process() throws IOException, InterruptedException {
     data.rewind();
+    byte[] arr = new byte[data.remaining()];
+    data.get(arr);
+    //SimpleRpcServer.LOG.warn("RDMA normal data content " +" "+ StandardCharsets.UTF_8.decode(ByteBuffer.wrap(arr)).toString());
+
     try {
       if (skipInitialSaslHandshake) {
         skipInitialSaslHandshake = false;
@@ -351,6 +366,7 @@ class SimpleServerRpcConnection extends ServerRpcConnection {
 
   @Override
   protected void doRespond(RpcResponse resp) throws IOException {
+    //SimpleRpcServer.LOG.info("SimpleRpcConn doRespond()");
     responder.doRespond(this, resp);
   }
 }

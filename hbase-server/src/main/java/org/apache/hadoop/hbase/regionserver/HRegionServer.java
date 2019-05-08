@@ -828,7 +828,7 @@ public class HRegionServer extends HasThread implements
       setupClusterConnection();
       // Setup RPC client for master communication
       this.rpcClient = RpcClientFactory.createClient(conf, clusterId, new InetSocketAddress(
-          this.rpcServices.isa.getAddress(), 0), clusterConnection.getConnectionMetrics());
+          this.rpcServices.isa.getAddress(), 0), clusterConnection.getConnectionMetrics(),true);
     } catch (Throwable t) {
       // Call stop if error or process will stick around for ever since server
       // puts up non-daemon threads.
@@ -1527,6 +1527,7 @@ public class HRegionServer extends HasThread implements
           Long.toHexString(this.zooKeeper.getRecoverableZooKeeper().getSessionId()));
 
       // Wake up anyone waiting for this server to online
+      //LOG.warn("RDMA debug we are online!");//OMG,the normal call didnot check if this is online!!
       synchronized (online) {
         online.set(true);
         online.notifyAll();
