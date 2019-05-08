@@ -14,7 +14,4 @@ feel free to ask me any question about the code.
 # Current status
 On master branch, we are using kind of sequencial connection, which is very slow but mostly debugged and tested.
 
-On parallel_conn branch, one thread may be reading while the other is writing to the connection.
-Commits after tag 0.1.4 are trying to optimize it, you can just drop those
-commits.
 
